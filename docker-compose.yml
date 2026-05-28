@@ -1,5 +1,4 @@
 services:
-
   backend:
     build:
       context: .
@@ -11,12 +10,13 @@ services:
       - PORT=3000
       - DB_PATH=/app/data/lexora.db
       - OLLAMA_URL=http://host.docker.internal:11434
+      - ADMIN_KEY=LEXORA_ADMIN_SECRET_2024
+      - ALLOWED_ORIGINS=http://localhost,http://localhost:80
     volumes:
       - sqlite-data:/app/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
-
   frontend:
     build:
       context: .
@@ -27,6 +27,5 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
-
 volumes:
   sqlite-data:

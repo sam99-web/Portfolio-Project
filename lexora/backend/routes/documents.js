@@ -1,14 +1,5 @@
 /**
  * documents.js — Routes pour le coffre-fort documentaire
- *
- * Deux entités gérées ici :
- *  - Dossiers : arborescence de répertoires (parent_id pour l'imbrication)
- *  - Documents : fichiers uploadés, stockés physiquement dans /backend/uploads/
- *
- * Upload : Multer stocke le fichier sur disque et on enregistre les métadonnées
- * en SQLite. On ne stocke pas les fichiers en base (mauvaise pratique, trop lourd).
- *
- * Téléchargement : GET /api/documents/:id/download → res.download() envoie le fichier.
  */
 
 import { Router } from 'express';
@@ -21,50 +12,59 @@ import db from '../models/db.js';
 
 const router = Router();
 
-// __dirname n'existe pas en ES modules, on le recrée manuellement
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = dirname(__filename);
 
-// Dossier physique où les fichiers uploadés sont stockés
 const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
 
-// Crée le dossier uploads s'il n'existe pas (au démarrage du serveur)
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
-// ── Configuration de Multer ────────────────────────────────
-// diskStorage : stocke les fichiers sur disque (vs memoryStorage qui les garde en RAM)
+// Sécurité : extensions autorisées uniquement
+const ALLOWED_EXTENSIONS = [
+  '.pdf', '.doc', '.docx',
+  '.xls', '.xlsx',
+  '.png', '.jpg', '.jpeg',
+  '.zip', '.txt',
+];
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOADS_DIR),
-  // On préfixe le nom avec un timestamp pour éviter les conflits de noms
   filename: (req, file, cb) => {
-    // Encode le nom original pour éviter les problèmes avec les caractères spéciaux
     const safeName = Buffer.from(file.originalname, 'latin1').toString('utf8');
     cb(null, `${Date.now()}-${safeName}`);
   },
 });
 
+// Sécurité : fileFilter — rejette les extensions non autorisées
+const fileFilter = (req, file, cb) => {
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (ALLOWED_EXTENSIONS.includes(ext)) {
+    cb(null, true);
+  } else {
+    cb(new Error(`Type de fichier non autorisé : ${ext}. Extensions acceptées : ${ALLOWED_EXTENSIONS.join(', ')}`), false);
+  }
+};
+
 const upload = multer({
   storage,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB max
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter,
 });
 
-// ════════════════════════════════════════════════════════════
-//  DOSSIERS
-// ════════════════════════════════════════════════════════════
-
-// GET /api/documents/dossiers — Tous les dossiers
+// GET /api/documents/dossiers
 router.get('/dossiers', (req, res) => {
   try {
     const dossiers = db.prepare('SELECT * FROM dossiers ORDER BY nom ASC').all();
     res.json(dossiers);
-  } catch {
+  } catch (err) {
+    console.error('[GET /dossiers]', err);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
-// POST /api/documents/dossiers — Créer un dossier
+// POST /api/documents/dossiers
 router.post('/dossiers', (req, res) => {
   try {
     const { nom, description, parent_id } = req.body;
@@ -76,41 +76,35 @@ router.post('/dossiers', (req, res) => {
 
     const created = db.prepare('SELECT * FROM dossiers WHERE id = ?').get(result.lastInsertRowid);
     res.status(201).json(created);
-  } catch {
+  } catch (err) {
+    console.error('[POST /dossiers]', err);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
-// DELETE /api/documents/dossiers/:id — Supprimer un dossier (et son contenu)
+// DELETE /api/documents/dossiers/:id
 router.delete('/dossiers/:id', (req, res) => {
   try {
     const dossier = db.prepare('SELECT * FROM dossiers WHERE id = ?').get(req.params.id);
     if (!dossier) return res.status(404).json({ error: 'Dossier non trouvé' });
 
-    // Supprimer les fichiers physiques des documents dans ce dossier
     const docs = db.prepare('SELECT * FROM documents WHERE dossier_id = ?').all(req.params.id);
     for (const doc of docs) {
       const filePath = path.join(UPLOADS_DIR, doc.nom_fichier);
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     }
 
-    // Supprimer les enregistrements en base
     db.prepare('DELETE FROM documents WHERE dossier_id = ?').run(req.params.id);
     db.prepare('DELETE FROM dossiers WHERE id = ?').run(req.params.id);
 
     res.json({ message: 'Dossier supprimé' });
-  } catch {
+  } catch (err) {
+    console.error('[DELETE /dossiers/:id]', err);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
-// ════════════════════════════════════════════════════════════
-//  DOCUMENTS
-// ════════════════════════════════════════════════════════════
-
-// GET /api/documents — Tous les documents (filtrables par dossier_id)
-// Exemple : GET /api/documents?dossier_id=3 → docs du dossier 3
-//           GET /api/documents?dossier_id=null → docs à la racine
+// GET /api/documents
 router.get('/', (req, res) => {
   try {
     const { dossier_id } = req.query;
@@ -120,26 +114,35 @@ router.get('/', (req, res) => {
         ? db.prepare('SELECT * FROM documents WHERE dossier_id IS NULL ORDER BY created_at DESC').all()
         : db.prepare('SELECT * FROM documents WHERE dossier_id = ? ORDER BY created_at DESC').all(dossier_id);
     res.json(docs);
-  } catch {
+  } catch (err) {
+    console.error('[GET /documents]', err);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
-// POST /api/documents/upload — Uploader un fichier
-// Multer gère la lecture du fichier ; on enregistre ensuite les métadonnées.
-router.post('/upload', upload.single('file'), (req, res) => {
+// POST /api/documents/upload
+router.post('/upload', (req, res, next) => {
+  upload.single('file')(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: 'Fichier trop volumineux. Maximum : 50 MB.' });
+      }
+      return res.status(400).json({ error: `Erreur upload : ${err.message}` });
+    }
+    if (err) return res.status(400).json({ error: err.message });
+    next();
+  });
+}, (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Aucun fichier reçu' });
 
     const { dossier_id, description } = req.body;
 
-    // Calcul de la taille affichable
     const bytes = req.file.size;
     const taille = bytes < 1024 * 1024
       ? `${(bytes / 1024).toFixed(0)} KB`
       : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
-    // Détection simple du type à partir de l'extension
     const ext = path.extname(req.file.originalname).toLowerCase();
     const typeMap = {
       '.pdf': 'PDF', '.doc': 'Word', '.docx': 'Word',
@@ -165,28 +168,29 @@ router.post('/upload', upload.single('file'), (req, res) => {
     const created = db.prepare('SELECT * FROM documents WHERE id = ?').get(result.lastInsertRowid);
     res.status(201).json(created);
   } catch (err) {
-    res.status(500).json({ error: 'Erreur lors de l\'upload', detail: err.message });
+    console.error('[POST /upload]', err);
+    res.status(500).json({ error: "Erreur lors de l'upload", detail: err.message });
   }
 });
 
-// DELETE /api/documents/:id — Supprimer un document
+// DELETE /api/documents/:id
 router.delete('/:id', (req, res) => {
   try {
     const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(req.params.id);
     if (!doc) return res.status(404).json({ error: 'Document non trouvé' });
 
-    // Supprimer le fichier physique du disque
     const filePath = path.join(UPLOADS_DIR, doc.nom_fichier);
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 
     db.prepare('DELETE FROM documents WHERE id = ?').run(req.params.id);
     res.json({ message: 'Document supprimé' });
-  } catch {
+  } catch (err) {
+    console.error('[DELETE /documents/:id]', err);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
-// GET /api/documents/:id/download — Télécharger un document
+// GET /api/documents/:id/download
 router.get('/:id/download', (req, res) => {
   try {
     const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(req.params.id);
@@ -195,9 +199,9 @@ router.get('/:id/download', (req, res) => {
     const filePath = path.join(UPLOADS_DIR, doc.nom_fichier);
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Fichier introuvable sur disque' });
 
-    // res.download() envoie le fichier avec le nom d'origine, pas le nom stocké sur disque
     res.download(filePath, doc.nom);
-  } catch {
+  } catch (err) {
+    console.error('[GET /documents/:id/download]', err);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
