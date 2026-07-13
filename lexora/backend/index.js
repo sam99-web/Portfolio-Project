@@ -37,14 +37,16 @@ import authRouter        from './routes/auth.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const envFile = process.env.NODE_ENV === 'test' ? './.env.test' : '../.env';
 dotenv.config({ path: join(__dirname, envFile) });
- 
+
 const PORT = process.env.PORT || 3000;
 const app  = express();
 
 // ── Sécurité : Headers HTTP ───────────────────────────────────
+// helmet() ajoute ~14 headers de sécurité (CSP, HSTS, X-Frame-Options...)
 app.use(helmet());
 
 // ── Sécurité : CORS strict ────────────────────────────────────
+// Seules les origines listées dans ALLOWED_ORIGINS peuvent appeler l'API.
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173')
   .split(',')
   .map(o => o.trim());
@@ -63,6 +65,8 @@ app.use(cors({
 }));
 
 // ── Sécurité : Rate Limiting ──────────────────────────────────
+// Limite chaque IP à 100 requêtes par fenêtre de 15 minutes.
+// Protège contre le brute-force et les attaques DDoS basiques.
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,

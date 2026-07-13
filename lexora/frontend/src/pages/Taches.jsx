@@ -72,21 +72,9 @@ function TachesProjet() {
   };
 
   const handleDelete = async id => {
-    try {
-      await fetch(`/api/taches/${id}`, { method: 'DELETE' });
-      // Mise à jour locale sans recharger : plus rapide, meilleure UX
-      setTaches(prev => prev.filter(t => t.id !== id));
-      toast('Tâche supprimée');
-    } catch {
-      toast('Erreur lors de la suppression', 'error');
-    }
+    await fetch(`/api/taches/${id}`, { method: 'DELETE' });
+    load();
   };
-
-  // filter() crée un nouveau tableau avec seulement les éléments qui passent le test
-  const filtered = taches.filter(t =>
-    t.titre?.toLowerCase().includes(search.toLowerCase()) ||
-    t.assignee?.toLowerCase().includes(search.toLowerCase())
-  );
 
   return (
     <div>
@@ -130,13 +118,11 @@ function TachesProjet() {
           )}
           {!loading && filtered.map(t => (
             <tr key={t.id}>
-              <td style={{ fontWeight: 500 }}>{t.titre}</td>
-              <td style={{ color: '#666' }}>{t.description || <span style={{ color: '#ccc' }}>—</span>}</td>
-              <td><StatusBadge statut={t.statut} /></td>
-              <td>{t.assignee || <span style={{ color: '#ccc' }}>—</span>}</td>
-              <td style={{ color: '#999', fontSize: '0.84rem' }}>
-                {t.created_at ? new Date(t.created_at).toLocaleDateString('fr-FR') : '—'}
-              </td>
+              <td>{t.titre}</td>
+              <td>{t.description}</td>
+              <td>{t.statut}</td>
+              <td>{t.assignee}</td>
+              <td>{t.created_at}</td>
               <td>
                 <button className="danger" onClick={() => handleDelete(t.id)}>Supprimer</button>
               </td>

@@ -13,6 +13,7 @@ import MonEspace       from './pages/MonEspace.jsx';
 import Login           from './pages/Login.jsx';
 
 // ── Gardes de route ───────────────────────────────────────
+
 export function PrivateRoute({ children }) {
   const { isAuthenticated } = useAuth();
   return isAuthenticated ? children : <Navigate to="/login" replace />;
