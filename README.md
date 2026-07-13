@@ -284,6 +284,8 @@ erDiagram
 | `dossiers` | Document vault folders (tree via `parent_id`) | `nom`, `parent_id` |
 | `documents` | Uploaded file metadata | `nom`, `nom_fichier`, `type`, `taille`, `dossier_id` |
 
+> Note: most tables above are independent — only `dossiers` and `documents` have a real foreign-key relationship (self-referencing folder tree + folder → document). Fields like `factures.client` or `planning.employe` are plain text, not enforced foreign keys.
+
 ---
 
 ## Tech Stack
@@ -292,15 +294,16 @@ erDiagram
 
 | Technology | Version | Role |
 |-----------|---------|------|
-| **Node.js** | 18 | JavaScript runtime |
+| **Node.js** | 18+ | JavaScript runtime |
 | **Express** | 4 | HTTP server, REST API |
-| **better-sqlite3** | 9+ | Synchronous SQLite driver |
+| **better-sqlite3** | 12.x | Synchronous SQLite driver |
 | **jsonwebtoken** | 9 | JWT authentication |
 | **bcryptjs** | 3 | Password hashing |
 | **Multer** | 2 | Multipart file uploads |
 | **Helmet** | 8 | HTTP security headers |
 | **express-rate-limit** | 8 | Request rate limiting |
 | **dotenv** | 16 | Environment configuration |
+| **Vitest + supertest** | 3 / 7 | Backend test suite |
 
 ### Frontend
 
@@ -487,7 +490,7 @@ POST   /api/documents/dossiers       → Folder  Body: { nom*, description, pare
 DELETE /api/documents/dossiers/:id   → { success: true }  (recursive delete)
 ```
 
-### Employees — Admin (requires `Authorization: Bearer <token>`)
+### Employees — Admin only (requires `Authorization: Bearer <token>` **with `role: 'admin'`**)
 ```
 GET    /api/employes      → Employee[]
 GET    /api/employes/:id  → Employee
@@ -495,8 +498,9 @@ POST   /api/employes      → Employee  Body: { nom*, email*, password*, prenom,
 PUT    /api/employes/:id  → Employee
 DELETE /api/employes/:id  → { success: true }
 ```
+> Protected by the `requireAdmin` middleware — a valid JWT alone is not enough, the token's `role` must be `admin`. Any authenticated non-admin user gets `403 Forbidden`.
 
-### Automations — Admin (requires `Authorization: Bearer <token>`)
+### Automations — Authenticated (requires `Authorization: Bearer <token>`)
 ```
 GET    /api/automations      → Automation[]
 POST   /api/automations      → Automation  Body: { nom*, action* }
@@ -527,11 +531,10 @@ Holberton-portfolio-projet/
     ├── .gitignore
     ├── package.json                # Shared workspace dependencies
     ├── backend/
-    │   ├── env.js                  # Loads dotenv before any other module
     │   ├── index.js                # Express entry point — mounts all routes
     │   ├── package.json
     │   ├── middleware/
-    │   │   └── auth.js             # JWT verification middleware
+    │   │   └── auth.js             # verifyJWT + requireAdmin middleware
     │   ├── models/
     │   │   └── db.js               # SQLite init, schema creation, admin seed
     │   ├── routes/                 # One file per business domain
@@ -542,12 +545,14 @@ Holberton-portfolio-projet/
     │   │   ├── factures.js         # Invoice CRUD
     │   │   ├── evenements.js       # Calendar event CRUD
     │   │   ├── planning.js         # Staff schedule CRUD
-    │   │   ├── employes.js         # Employee CRUD (admin, JWT required)
-    │   │   ├── automations.js      # Automation rule CRUD (admin, JWT required)
+    │   │   ├── employes.js         # Employee CRUD (admin, requireAdmin)
+    │   │   ├── automations.js      # Automation rule CRUD (authenticated)
     │   │   ├── documents.js        # File vault: folders + upload/download
     │   │   └── assistant.js        # Proxy to Ollama LLM
     │   ├── services/
     │   │   └── ollamaService.js    # HTTP client for Ollama
+    │   ├── tests/
+    │   │   └── employes.test.js    # Vitest + supertest security tests
     │   └── uploads/                # Uploaded files (gitignored, Docker volume)
     └── frontend/
         ├── index.html
@@ -583,22 +588,23 @@ Holberton-portfolio-projet/
 | **HTTP Headers** | Helmet.js — sets 14+ security headers (CSP, HSTS, X-Frame-Options, etc.) |
 | **CORS** | Strict allowlist via `ALLOWED_ORIGINS` env var |
 | **Rate Limiting** | 100 requests / 15 min per IP on all `/api/*` routes |
-| **Authentication** | JWT (HS256, 24h expiry) via `Authorization: Bearer` header |
+| **Authentication** | JWT (via `Authorization: Bearer` header), payload attached to `req.admin` |
 | **Password Storage** | bcryptjs with 10 salt rounds |
-| **Admin Routes** | JWT required on `/api/employes` and `/api/automations` |
+| **Admin Routes** | `/api/employes` requires `requireAdmin` — a valid token is not enough, the `role` claim must be `admin` (fixes a prior vulnerability where any authenticated employee could self-promote) |
 | **File Uploads** | Multer — 50 MB limit, stored with timestamp-prefixed names |
 | **Input Validation** | Required fields validated in each route before DB write |
+| **Automated Tests** | Vitest + supertest: 6 tests covering 401/403/200 access control and admin-only delete/promote paths |
 
 ---
 
 ## Team
 
-Project completed as part of the **Holberton School** curriculum.
+Project completed as part of the **Holberton School France** curriculum, in pair programming.
 
 | Name | Role |
 |------|------|
-| **Polo** | Full-Stack Developer — Backend API, Auth, Database, Docker |
-| *(co-author)* | Full-Stack Developer — Frontend React, UI/UX, Components |
+| **Paul Gioria** | Full-Stack Developer — Backend API, Auth, Database, Docker, README |
+| **Ndeye Fatou Samb (Keish)** | Full-Stack Developer — Backend security (Helmet, CORS, rate limiting, `requireAdmin`), Vitest test suite, frontend pages (Todos, Clients, Employés, Automations), QA |
 
 ---
 
