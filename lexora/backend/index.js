@@ -17,14 +17,10 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import express from 'express';
 import cors from 'cors';
-<<<<<<< HEAD
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 
-=======
-
 // ── Import des modules de routes ──────────────────────────────
->>>>>>> e9ef8e6dfbfb330b737a5ae136f1bf0aa5bb2837
 import tachesRouter      from './routes/taches.js';
 import facturesRouter    from './routes/factures.js';
 import planningRouter    from './routes/planning.js';
@@ -43,7 +39,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // Charge le fichier .env situé un cran au-dessus (lexora/.env)
 dotenv.config({ path: join(__dirname, '../.env') });
 
-<<<<<<< HEAD
+// ── Application Express ───────────────────────────────────────
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
@@ -78,20 +74,8 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-=======
-// ── Application Express ───────────────────────────────────────
-const app  = express();
-const PORT = process.env.PORT || 3000;
-
-// Middleware CORS : autorise les requêtes cross-origin (utile en développement
-// quand le frontend tourne sur un port différent du backend).
-// En production, Nginx sert les deux sur le même domaine donc CORS n'est
-// pas strictement nécessaire, mais on le laisse pour la flexibilité.
-app.use(cors());
-
 // Middleware JSON : parse automatiquement les corps de requête JSON
 // et rend req.body disponible dans les handlers.
->>>>>>> e9ef8e6dfbfb330b737a5ae136f1bf0aa5bb2837
 app.use(express.json());
 
 // ── Route de santé ────────────────────────────────────────────
@@ -100,28 +84,24 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-<<<<<<< HEAD
-=======
 // ── Montage des routes ────────────────────────────────────────
 // Chaque préfixe correspond à un module métier indépendant.
->>>>>>> e9ef8e6dfbfb330b737a5ae136f1bf0aa5bb2837
 app.use('/api/taches',      tachesRouter);
 app.use('/api/factures',    facturesRouter);
 app.use('/api/planning',    planningRouter);
 app.use('/api/assistant',   assistantRouter);
 app.use('/api/todos',       todosRouter);
 app.use('/api/clients',     clientsRouter);
-<<<<<<< HEAD
-app.use('/api/employes',    employesRouter);
-app.use('/api/automations', automationsRouter);
-=======
-app.use('/api/employes',    employesRouter);     // Protégé par isAdmin
-app.use('/api/automations', automationsRouter);  // Protégé par isAdmin
->>>>>>> e9ef8e6dfbfb330b737a5ae136f1bf0aa5bb2837
+app.use('/api/employes',    employesRouter);     // Protégé par requireAdmin
+app.use('/api/automations', automationsRouter);  // Protégé par requireAdmin
 app.use('/api/evenements',  evenementsRouter);
 app.use('/api/documents',   documentsRouter);
 
 // ── Démarrage du serveur ──────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`✅ Lexora backend running on port ${PORT}`);
-});
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(` Lexora backend running on port ${PORT}`);
+  });
+}
+
+export default app;
